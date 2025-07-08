@@ -1,4 +1,4 @@
-# PsciCreature Manim Library
+# PsiCreature Manim Library
 
 This repository contains Manim code for creating animated "Psi Creature".
 
