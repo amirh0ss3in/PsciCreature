@@ -236,11 +236,13 @@ class TestCreatureFullCapabilities(Scene):
 
         psi = PsiCreature(
             initial_anchor_pos=LEFT * 4,
-            body_scale=1.0,
+            body_scale=2.0,
             eye_color=GREEN_D
         )
         anchor_dot = Dot(psi.anchor_pos, color=RED).set_z_index(10)
-        self.play(FadeIn(psi), FadeIn(anchor_dot))
+        self.play(FadeIn(psi), 
+                #   FadeIn(anchor_dot)
+                  )
         self.wait(1)
 
         self.play(psi.look_at(title))
@@ -258,7 +260,7 @@ class TestCreatureFullCapabilities(Scene):
         destination_1 = RIGHT * 4
         self.play(
             psi.move_anchor_to(destination_1),
-            anchor_dot.animate.move_to(destination_1)
+            # anchor_dot.animate.move_to(destination_1)
         )
         self.wait(1)
 
@@ -270,13 +272,14 @@ class TestCreatureFullCapabilities(Scene):
         destination_2 = ORIGIN
         self.play(
             psi.move_anchor_to(destination_2),
-            anchor_dot.animate.move_to(destination_2),
+            # anchor_dot.animate.move_to(destination_2),
         )
         self.play(psi.blink())
         self.wait(2)
         
         self.play(psi.move_anchor_to(UP),
-                  anchor_dot.animate.move_to(UP))
+                #   anchor_dot.animate.move_to(UP)
+                  )
         
         self.play(psi.look_at(LEFT))
         self.wait(1)
