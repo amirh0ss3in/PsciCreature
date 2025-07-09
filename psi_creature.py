@@ -236,7 +236,7 @@ class TestCreatureFullCapabilities(Scene):
 
         psi = PsiCreature(
             initial_anchor_pos=LEFT * 4,
-            body_scale=2.0,
+            body_scale=3.5,
             eye_color=GREEN_D
         )
         anchor_dot = Dot(psi.anchor_pos, color=RED).set_z_index(10)
