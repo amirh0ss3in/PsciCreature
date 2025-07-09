@@ -278,3 +278,9 @@ class TestCreatureFullCapabilities(Scene):
 
         self.play(psi.change_state("pondering"))
         self.wait(1)
+
+        self.play(psi.bend_sclera(UP+RIGHT))
+        self.wait(1)
+
+        self.play(psi.reset_sclera())
+        self.wait(1)
