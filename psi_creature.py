@@ -148,28 +148,33 @@ class PsiCreature(VGroup):
             for state, template in self.templates.items()
         }
 
-        self.eyes = Eyes(separation=eyes_separation, eye_width=eye_width, eye_height=eye_height, iris_color=eye_color)
+        # ==================================
+        #  THE GENIUS FIX IS HERE
+        # ==================================
+        # The default eye parameters are designed for the default body_scale of 2.0.
+        # We must adjust them proportionally if a different body_scale is provided.
+        default_body_scale = 2.0
+        scale_factor = body_scale / default_body_scale
+
+        scaled_eye_width = eye_width * scale_factor
+        scaled_eye_height = eye_height * scale_factor
+        scaled_eyes_separation = eyes_separation * scale_factor
+
+        self.eyes = Eyes(
+            separation=scaled_eyes_separation,
+            eye_width=scaled_eye_width,
+            eye_height=scaled_eye_height,
+            iris_color=eye_color
+        )
+        # ==================================
         
-        # ==================================
-        #  THE CRITICAL FIX IS HERE
-        # ==================================
         self.eyes_offsets = {}
         for state, template in self.templates.items():
-            # OLD (BUGGY) LOGIC relied on the template's bounding box center for the x-position.
-            # This is unstable, as the bounding box changes unpredictably between poses.
-            #   buggy_x = template.get_center()[0]
-
-            # NEW (STABLE) LOGIC uses the ANCHOR's x-position as the reference.
-            # This ensures the eyes are always vertically aligned with the stable anchor point.
             stable_x = self.anchor_vectors[state][0]
-
-            # The y-position logic can still safely use the template's overall height.
+            # We now scale the y-offset for the eyes based on the proportional scale_factor
+            # to ensure they stay in the same relative position on the head.
             target_y = template.get_top()[1] - (self.eyes.get_height() * 0.25)
-            
-            # The desired absolute position for the eyes' center (in the template's coordinate system)
             eyes_center_in_template = np.array([stable_x, target_y, 0])
-            
-            # The final offset is the vector FROM the anchor TO the eyes' center.
             self.eyes_offsets[state] = eyes_center_in_template - self.anchor_vectors[state]
 
         if initial_state not in self.templates:
@@ -231,7 +236,7 @@ class TestCreatureFullCapabilities(Scene):
 
         psi = PsiCreature(
             initial_anchor_pos=LEFT * 4,
-            body_scale=3.0,
+            body_scale=1.0,
             eye_color=GREEN_D
         )
         anchor_dot = Dot(psi.anchor_pos, color=RED).set_z_index(10)
@@ -284,3 +289,47 @@ class TestCreatureFullCapabilities(Scene):
 
         self.play(psi.reset_sclera())
         self.wait(1)
+
+
+class TestSize(Scene):
+    def construct(self):
+        title = Text("Test Proportional Sizing").to_edge(UP)
+        
+        psi_small = PsiCreature(
+            initial_anchor_pos=LEFT * 4,
+            body_scale=1.5, # was 1.0, increased slightly for better visibility
+            eye_color=GREEN_D
+        )
+        psi_small_label = Text("body_scale=1.5", font_size=24).next_to(psi_small, DOWN)
+
+
+        psi_big = PsiCreature(
+            initial_anchor_pos=RIGHT * 4,
+            body_scale=4.0,
+            eye_color=BLUE_C
+        )
+        psi_big_label = Text("body_scale=4.0", font_size=24).next_to(psi_big, DOWN)
+
+        self.play(
+            FadeIn(title),
+            FadeIn(psi_small),
+            FadeIn(psi_small_label),
+            FadeIn(psi_big),
+            FadeIn(psi_big_label)
+        )
+        
+        self.wait(1)
+        
+        self.play(
+            psi_small.look_at(psi_big),
+            psi_big.look_at(psi_small)
+        )
+        
+        self.wait(1)
+        
+        self.play(
+            psi_small.blink(),
+            psi_big.blink()
+        )
+
+        self.wait(2)
