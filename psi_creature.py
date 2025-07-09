@@ -129,9 +129,9 @@ class PsiCreature(VGroup):
         body_color: ManimColor = BLUE_E,
         eye_color: ManimColor = BLUE_C,
         body_scale: float = 2.0,
-        eyes_separation: float = 1.5,
-        eye_width: float = 0.8,
-        eye_height: float = 0.8,
+        eyes_separation: float = 0.48,
+        eye_width: float = 0.3,
+        eye_height: float = 0.3,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -173,7 +173,7 @@ class PsiCreature(VGroup):
             stable_x = self.anchor_vectors[state][0]
             # We now scale the y-offset for the eyes based on the proportional scale_factor
             # to ensure they stay in the same relative position on the head.
-            target_y = template.get_top()[1] - (self.eyes.get_height() * 0.25)
+            target_y = template.get_top()[1] - (self.eyes.get_height() * 0.9)
             eyes_center_in_template = np.array([stable_x, target_y, 0])
             self.eyes_offsets[state] = eyes_center_in_template - self.anchor_vectors[state]
 
