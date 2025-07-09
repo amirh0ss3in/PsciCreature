@@ -3,7 +3,8 @@ import numpy as np
 import os
 
 # ====================================================================
-#  The intelligent Sclera Class
+#  Unaltered Helper Classes (Sclera, Eye, Eyes)
+#  (These classes are correct and do not need changes)
 # ====================================================================
 
 class Sclera(VMobject):
@@ -40,65 +41,30 @@ class Sclera(VMobject):
     def get_bend_animation(self, direction_vector: np.ndarray, intensity: float = 0.4) -> Animation:
         return Transform(self, self._get_bend_target(direction_vector, intensity))
 
-    # --- NEW SQUINT LOGIC ---
     def _get_squint_target(self, theta: float) -> 'Sclera':
-        """
-        Calculates the target points for a squint animation.
-        Theta = 0 means fully open, Theta = PI/2 means fully closed.
-        """
         target_points = self.original_points.copy()
-        # Clamp theta to be between 0 and PI/2
         theta = np.clip(theta, 0, PI / 2)
-
-        # Max vertical extent of the original sclera
         max_y = self.height / 2
-
-        # Calculate the squint factor: 0 for open, 1 for closed
-        # Using sin(theta) maps 0 to 0 (no squint) and PI/2 to 1 (full squint)
         squint_factor = np.sin(theta)
-
         for i, point in enumerate(self.original_points):
-            # Avoid division by zero if sclera has no height (e.g., scaled to 0)
-            if max_y == 0:
-                continue
-            
-            # Normalized vertical position (0 at center, 1 at top/bottom edges)
+            if max_y == 0: continue
             norm_y = np.abs(point[1]) / max_y
-
-            # Falloff weight: points closer to the poles are affected more strongly
-            # Using a power function creates a smooth curve, affecting ends more.
-            falloff_weight = norm_y ** 2 # Can be adjusted (e.g., norm_y ** 3) for different curves
-
-            # Calculate vertical displacement
-            # Points above center (positive y) move downwards (negative displacement)
-            # Points below center (negative y) move upwards (positive displacement)
+            falloff_weight = norm_y ** 2
             displacement_y = -point[1] * falloff_weight * squint_factor
-            
             target_points[i, 1] += displacement_y
-
         target_sclera = self.copy()
         target_sclera.set_points(target_points)
-        target_sclera.move_to(self) # Keep sclera centered
+        target_sclera.move_to(self)
         return target_sclera
 
     def get_squint_animation(self, theta: float) -> Animation:
-        """
-        Returns an animation for the Sclera to squint.
-        Theta = 0 means fully open, Theta = PI/2 means fully closed.
-        """
         return Transform(self, self._get_squint_target(theta))
 
     def get_reset_animation(self) -> Animation:
-        """The single, authoritative method to reset the Sclera to its original shape."""
         target_mobject = self.copy()
         target_mobject.set_points(self.original_points)
         target_mobject.move_to(self)
         return Transform(self, target_mobject)
-
-
-# ====================================================================
-#  The Eye Class
-# ====================================================================
 
 class Eye(VGroup):
     def __init__(self, width: float = 1.0, height: float = 1.0, iris_color: ManimColor = BLUE_C, iris_radius_ratio: float = 0.5, pupil_radius_ratio: float = 0.4, **kwargs):
@@ -128,24 +94,9 @@ class Eye(VGroup):
         return self.iris_pupil_group.animate(**kwargs).move_to(new_position)
 
     def bend_sclera(self, direction_vector: np.ndarray, intensity: float = 0.4) -> Animation: return self.sclera.get_bend_animation(direction_vector, intensity)
-    
-    def reset_sclera(self) -> Animation:
-        """Resets any deformation by restoring the original points."""
-        return self.sclera.get_reset_animation()
-    
-    # --- NEW SQUINT METHODS ---
-    def squint(self, theta: float, **kwargs) -> Animation:
-        """Squints the eye by deforming the sclera."""
-        return self.sclera.get_squint_animation(theta)
-
-    def reset_squint(self, **kwargs) -> Animation:
-        """Resets the eye from a squinted state to its original open shape."""
-        # The reset_sclera method correctly restores the original (non-squinted) shape.
-        return self.sclera.get_reset_animation()
-    
-# ====================================================================
-#  Higher-level classes (now call the corrected methods)
-# ====================================================================
+    def reset_sclera(self) -> Animation: return self.sclera.get_reset_animation()
+    def squint(self, theta: float, **kwargs) -> Animation: return self.sclera.get_squint_animation(theta)
+    def reset_squint(self, **kwargs) -> Animation: return self.sclera.get_reset_animation()
 
 class Eyes(VGroup):
     def __init__(self, separation: float=1.5, eye_width: float=1.0, eye_height: float=1.0, **eye_kwargs):
@@ -159,97 +110,171 @@ class Eyes(VGroup):
     def blink(self, **kwargs) -> AnimationGroup: return AnimationGroup(self.left_eye.blink(**kwargs), self.right_eye.blink(**kwargs))
     def look_at(self, target, **kwargs) -> AnimationGroup: return AnimationGroup(self.left_eye.look_at(target, **kwargs), self.right_eye.look_at(target, **kwargs))
     def look_straight(self, **kwargs) -> AnimationGroup: return AnimationGroup(self.left_eye.look_at(self.left_eye.get_center(), **kwargs), self.right_eye.look_at(self.right_eye.get_center(), **kwargs))
-    
     def bend_sclera(self, direction_vector: np.ndarray, intensity: float = 0.4) -> AnimationGroup:
         mirrored_direction = direction_vector * np.array([-1, 1, 1])
         return AnimationGroup(self.left_eye.bend_sclera(direction_vector, intensity=intensity), self.right_eye.bend_sclera(mirrored_direction, intensity=intensity))
-    
     def reset_sclera(self) -> AnimationGroup: return AnimationGroup(self.left_eye.reset_sclera(), self.right_eye.reset_sclera())
+    def squint(self, theta: float, **kwargs) -> AnimationGroup: return AnimationGroup(self.left_eye.squint(theta, **kwargs), self.right_eye.squint(theta, **kwargs))
+    def reset_squint(self, **kwargs) -> AnimationGroup: return AnimationGroup(self.left_eye.reset_squint(**kwargs), self.right_eye.reset_squint(**kwargs))
 
-    # --- NEW SQUINT METHODS ---
-    def squint(self, theta: float, **kwargs) -> AnimationGroup:
-        """Squints both eyes simultaneously."""
-        return AnimationGroup(self.left_eye.squint(theta, **kwargs), self.right_eye.squint(theta, **kwargs))
-
-    def reset_squint(self, **kwargs) -> AnimationGroup:
-        """Resets both eyes from a squinted state."""
-        return AnimationGroup(self.left_eye.reset_squint(**kwargs), self.right_eye.reset_squint(**kwargs))
+# ====================================================================
+#  INTELLIGENT, ANCHOR-BASED PsiCreature CLASS (WITH FIX)
+# ====================================================================
 
 class PsiCreature(VGroup):
-    def __init__(self, body_color: ManimColor = BLUE_E, eye_color: ManimColor = BLUE_C, body_scale: float = 2.0, eyes_separation: float = 1.5, eye_width: float = 0.8, eye_height: float = 0.8, **kwargs):
+    def __init__(
+        self,
+        initial_anchor_pos: np.ndarray = ORIGIN,
+        initial_state: str = "default",
+        body_color: ManimColor = BLUE_E,
+        eye_color: ManimColor = BLUE_C,
+        body_scale: float = 2.0,
+        eyes_separation: float = 1.5,
+        eye_width: float = 0.8,
+        eye_height: float = 0.8,
+        **kwargs
+    ):
         super().__init__(**kwargs)
-        svg_file_path = "Psi.svg"
-        if os.path.exists(svg_file_path): self.body = SVGMobject(svg_file_path).set_color(body_color)
-        else:
-            print(f"Warning: {svg_file_path} not found. Using a Circle placeholder.")
-            self.body = Circle(radius=1.0, color=body_color, fill_opacity=1).set_width(1.5)
-        self.body.set_height(body_scale)
+
+        self.templates = {
+            "default": SVGMobject("Psi.svg").set_color(body_color),
+            "pondering": SVGMobject("Psi_hand_on_mouth_pondering.svg").set_color(body_color),
+        }
+        for template in self.templates.values():
+            template.set_height(body_scale)
+
+        self.anchor_vectors = {
+            state: template.submobjects[-1].get_center()
+            for state, template in self.templates.items()
+        }
+
         self.eyes = Eyes(separation=eyes_separation, eye_width=eye_width, eye_height=eye_height, iris_color=eye_color)
-        target_y = self.body.get_top()[1] - (self.eyes.get_height() * 0.25)
-        self.eyes.move_to(np.array([self.body.get_center()[0], target_y, 0]))
+        
+        # ==================================
+        #  THE CRITICAL FIX IS HERE
+        # ==================================
+        self.eyes_offsets = {}
+        for state, template in self.templates.items():
+            # OLD (BUGGY) LOGIC relied on the template's bounding box center for the x-position.
+            # This is unstable, as the bounding box changes unpredictably between poses.
+            #   buggy_x = template.get_center()[0]
+
+            # NEW (STABLE) LOGIC uses the ANCHOR's x-position as the reference.
+            # This ensures the eyes are always vertically aligned with the stable anchor point.
+            stable_x = self.anchor_vectors[state][0]
+
+            # The y-position logic can still safely use the template's overall height.
+            target_y = template.get_top()[1] - (self.eyes.get_height() * 0.25)
+            
+            # The desired absolute position for the eyes' center (in the template's coordinate system)
+            eyes_center_in_template = np.array([stable_x, target_y, 0])
+            
+            # The final offset is the vector FROM the anchor TO the eyes' center.
+            self.eyes_offsets[state] = eyes_center_in_template - self.anchor_vectors[state]
+
+        if initial_state not in self.templates:
+            raise ValueError(f"Initial state '{initial_state}' is not valid.")
+        self.current_state_name = initial_state
+        self.anchor_pos = initial_anchor_pos
+
+        self.body = self._create_body_at_anchor(self.current_state_name, self.anchor_pos)
+        self.eyes.move_to(self.anchor_pos + self.eyes_offsets[self.current_state_name])
         self.add(self.body, self.eyes)
 
-    # Delegate all methods
+    def _create_body_at_anchor(self, state_name, anchor_target_pos):
+        template = self.templates[state_name]
+        anchor_vector = self.anchor_vectors[state_name]
+        mobj = template.copy()
+        mobj.move_to(anchor_target_pos - anchor_vector)
+        return mobj
+
+    def change_state(self, new_state_name: str) -> AnimationGroup:
+        if new_state_name not in self.templates:
+            raise ValueError(f"Cannot change to '{new_state_name}'; not a valid state.")
+
+        target_body = self._create_body_at_anchor(new_state_name, self.anchor_pos)
+        body_transform = Transform(self.body, target_body)
+
+        eyes_new_pos = self.anchor_pos + self.eyes_offsets[new_state_name]
+        eyes_move = self.eyes.animate.move_to(eyes_new_pos)
+
+        self.current_state_name = new_state_name
+        return AnimationGroup(body_transform, eyes_move)
+
+    def move_anchor_to(self, new_anchor_pos: np.ndarray) -> AnimationGroup:
+        current_anchor_vector = self.anchor_vectors[self.current_state_name]
+        body_move = self.body.animate.move_to(new_anchor_pos - current_anchor_vector)
+
+        current_eyes_offset = self.eyes_offsets[self.current_state_name]
+        eyes_move = self.eyes.animate.move_to(new_anchor_pos + current_eyes_offset)
+
+        self.anchor_pos = new_anchor_pos
+        return AnimationGroup(body_move, eyes_move)
+
+    # Delegate all eye methods
     def blink(self, **kwargs) -> AnimationGroup: return self.eyes.blink(**kwargs)
     def look_at(self, target, **kwargs) -> AnimationGroup: return self.eyes.look_at(target, **kwargs)
     def look_straight(self, **kwargs) -> AnimationGroup: return self.eyes.look_straight(**kwargs)
-    def bend_sclera(self, direction: np.ndarray, intensity: float = 0.4) -> AnimationGroup: return self.eyes.bend_sclera(direction, intensity=intensity)
+    def bend_sclera(self, direction: np.ndarray, intensity: float=0.4) -> AnimationGroup: return self.eyes.bend_sclera(direction, intensity=intensity)
     def reset_sclera(self) -> AnimationGroup: return self.eyes.reset_sclera()
-
-    # --- NEW SQUINT METHODS ---
-    def squint(self, theta: float, **kwargs) -> AnimationGroup:
-        """Squints the creature's eyes."""
-        return self.eyes.squint(theta, **kwargs)
-
-    def reset_squint(self, **kwargs) -> AnimationGroup:
-        """Resets the creature's eyes from a squinted state."""
-        return self.eyes.reset_squint(**kwargs)
+    def squint(self, theta: float, **kwargs) -> AnimationGroup: return self.eyes.squint(theta, **kwargs)
+    def reset_squint(self, **kwargs) -> AnimationGroup: return self.eyes.reset_squint(**kwargs)
 
 # ====================================================================
-#  Final Test Scene 
+#  UPDATED: Test Scene demonstrating all features
 # ====================================================================
 
-class TestEyeExpressionsScene(Scene):
+class TestCreatureFullCapabilities(Scene):
     def construct(self):
-        title = Text("Creature Expressions").to_edge(UP)
+        title = Text("Creature Full Capabilities").to_edge(UP)
         self.add(title)
-        psi = PsiCreature(body_scale=3.5, eye_color=GREEN_D)
-        psi.to_edge(LEFT, buff=1.5)
 
-        self.play(FadeIn(psi))
+        psi = PsiCreature(
+            initial_anchor_pos=LEFT * 4,
+            body_scale=3.0,
+            eye_color=GREEN_D
+        )
+        anchor_dot = Dot(psi.anchor_pos, color=RED).set_z_index(10)
+        self.play(FadeIn(psi), FadeIn(anchor_dot))
+        self.wait(1)
+
         self.play(psi.look_at(title))
+        self.play(psi.squint(PI / 5), run_time=0.8)
         self.wait(1)
-
-        # --- ANGRY ---
-        angry_text = Text("Angry").next_to(psi, RIGHT, buff=0.5).scale(0.8)
-        self.play(Write(angry_text))
-        self.play(psi.bend_sclera(UP + RIGHT, intensity=0.35), run_time=0.6)
-        self.wait(2)
-        self.play(psi.reset_sclera(), run_time=0.6)
-        self.play(FadeOut(angry_text))
-        self.wait(0.5)
-
-        # --- SAD ---
-        sad_text = Text("Sad").next_to(psi, RIGHT, buff=0.5).scale(0.8)
-        self.play(Write(sad_text))
-        self.play(psi.bend_sclera(UP + LEFT, intensity=0.3), run_time=0.7)
-        self.wait(2)
-        self.play(psi.reset_sclera(), run_time=0.7)
-        self.play(FadeOut(sad_text))
-        self.wait(0.5)
-        
-        # --- SUSPICIOUS / SQUINT ---
-        suspicious_text = Text("Suspicious / Squint").next_to(psi, RIGHT, buff=0.5).scale(0.8)
-        self.play(Write(suspicious_text))
-        # theta = PI/4 for a moderate squint (half closed)
-        self.play(psi.squint(PI/5), run_time=0.8)
-        self.wait(2)
         self.play(psi.reset_squint(), run_time=0.8)
-        self.play(FadeOut(suspicious_text))
-        self.wait(0.5)
-
-        # --- Final animation ---
+        self.play(psi.look_straight())
         self.wait(1)
-        self.play(psi.look_straight(), psi.blink())
+
+        # Test Body State Change (anchor is stationary, eyes should now move correctly)
+        self.play(psi.change_state("pondering"))
         self.wait(2)
-        self.play(FadeOut(psi, title))
+        
+        # Test Anchor-Based Movement (while in 'pondering' state)
+        destination_1 = RIGHT * 4
+        self.play(
+            psi.move_anchor_to(destination_1),
+            anchor_dot.animate.move_to(destination_1)
+        )
+        self.wait(1)
+
+        # Test State Change at a New Location
+        self.play(psi.change_state("default"))
+        self.wait(1)
+
+        # Final Movement and Blink
+        destination_2 = ORIGIN
+        self.play(
+            psi.move_anchor_to(destination_2),
+            anchor_dot.animate.move_to(destination_2),
+        )
+        self.play(psi.blink())
+        self.wait(2)
+        
+        self.play(psi.move_anchor_to(UP),
+                  anchor_dot.animate.move_to(UP))
+        
+        self.play(psi.look_at(LEFT))
+        self.wait(1)
+
+        self.play(psi.change_state("pondering"))
+        self.wait(1)
