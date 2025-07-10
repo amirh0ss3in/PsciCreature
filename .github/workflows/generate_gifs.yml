@@ -16,21 +16,20 @@ jobs:
       contents: write
 
     steps:
-      # 1. Check out the repository code (needs fetch-depth: 2 for git diff)
+      # 1. Checkout Repo. We no longer need fetch-depth: 0, as we use explicit SHAs.
       - name: Checkout Repo
         uses: actions/checkout@v3
+        # We need to fetch the 'before' commit so we can diff against it.
         with:
-          fetch-depth: 2
+          fetch-depth: 0 
 
-      # 2. NEW: Check if any files were Added/Modified, REQUIRING conversion
+      # 2. Check if any files were Added/Modified, REQUIRING conversion
       - name: Check for Conversion Task
         id: check_for_conversion
         run: |
           echo "Checking for Added or Modified MP4 files..."
-          # `git diff` gets changes between the last two commits.
-          # `grep -q` quietly checks if any lines start with "A" (Added) or "M" (Modified)
-          # and end in ".mp4". It sets an exit code of 0 (true) if found.
-          if git diff --name-status HEAD~1 HEAD -- "media/videos/tests/1080p60" | grep -q -E "^(A|M).*\.mp4"; then
+          # Use the exact 'before' and 'after' SHAs from the push event. This is the robust way.
+          if git diff --name-status ${{ github.event.before }} ${{ github.event.after }} -- "media/videos/tests/1080p60" | grep -q -E "^(A|M).*\.mp4"; then
             echo "Conversion is needed. Setting output 'needs_conversion=true'."
             echo "needs_conversion=true" >> $GITHUB_OUTPUT
           else
@@ -39,7 +38,6 @@ jobs:
           fi
 
       # 3. Conditionally install FFmpeg
-      # This step will ONLY run if the previous step set needs_conversion to 'true'
       - name: Setup FFmpeg
         if: steps.check_for_conversion.outputs.needs_conversion == 'true'
         run: |
@@ -47,24 +45,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # 4. Intelligent Sync: This step runs every time, but its internal logic is already smart.
+      # 4. Intelligent Sync: Process only what changed
       - name: Sync GIF files based on changes
         run: |
           VIDEO_DIR="media/videos/tests/1080p60"
           GIF_DIR="media/videos/tests/1080p60/gifs"
           mkdir -p $GIF_DIR
           
-          git diff --name-status HEAD~1 HEAD -- "$VIDEO_DIR" | while read -r status file; do
+          # CRITICAL: Use the same robust diff command here.
+          git diff --name-status ${{ github.event.before }} ${{ github.event.after }} -- "$VIDEO_DIR" | while read -r status file; do
             if [[ "$file" == *.mp4 ]]; then
               filename=$(basename "$file" .mp4)
               gif_path="$GIF_DIR/$filename.gif"
 
-              # This block will only be entered if ffmpeg was installed
               if [[ "$status" == "A" || "$status" == "M" ]]; then
                 echo "Action: GENERATE for $file"
                 ffmpeg -i "$file" -vf "fps=10,scale=480:-1:flags=lanczos" -y "$gif_path"
               
-              # This block runs fine without ffmpeg
               elif [[ "$status" == "D" ]]; then
                 echo "Action: DELETE for $file"
                 if [[ -f "$gif_path" ]]; then
@@ -74,10 +71,9 @@ jobs:
             fi
           done
 
-      # 5. Regenerate README from current state
+      # 5. Regenerate README from current state (unchanged)
       - name: Update README with current video list
         run: |
-          # (This step is unchanged)
           VIDEO_DIR="media/videos/tests/1080p60"
           GIF_DIR="media/videos/tests/1080p60/gifs"
           README_FILE="README.md"
@@ -94,10 +90,9 @@ jobs:
           awk -v gifs="$MARKDOWN_OUTPUT" '/<!-- START_GIFS -->/{print;print gifs;f=1} /<!-- END_GIFS -->/{f=0} !f{print}' $README_FILE > tmp_readme && mv tmp_readme $README_FILE
           echo "README.md has been regenerated."
 
-      # 6. Commit and Push Changes
+      # 6. Commit and Push Changes (unchanged)
       - name: Commit and Push Changes
         run: |
-          # (This step is unchanged)
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions@github.com'
           git add media/videos/tests/1080p60/
