@@ -1,90 +1,109 @@
 # .github/workflows/generate_gifs.yml
 
-name: Generate Video GIFs for README
+name: Generate and Sync Video GIFs for README
 
-# Controls when the action will run.
-# It triggers on a push event to the 'main' branch,
-# but ONLY if files in 'media/videos/tests/1080p60/' were changed.
 on:
   push:
     branches:
       - main
     paths:
+      # Trigger on any change to mp4 files, even deletion
       - 'media/videos/tests/1080p60/**.mp4'
 
 jobs:
-  build_gifs:
+  build_and_sync_gifs:
     runs-on: ubuntu-latest
-    
     permissions:
       contents: write
 
     steps:
       # 1. Check out the repository code
+      # fetch-depth: 2 is CRITICAL. It fetches the last 2 commits
+      # so we can run `git diff` between the current and previous state.
       - name: Checkout Repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
 
-      # 2. Set up FFmpeg (a powerful video/audio converter)
+      # 2. Set up FFmpeg
       - name: Setup FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # 3. The main script to generate GIFs and update the README
-      - name: Generate GIFs and Update README
+      # 3. Intelligent Sync: Process only what changed
+      - name: Sync GIF files based on changes
+        id: sync_gifs
         run: |
-          # Define the source and output directories
           VIDEO_DIR="media/videos/tests/1080p60"
-          GIF_DIR="media/videos/tests/1080p60/gifs" # We'll create a dedicated subfolder for GIFs
-          README_FILE="README.md"
-
-          # Create the GIF output directory if it doesn't exist
+          GIF_DIR="media/videos/tests/1080p60/gifs"
           mkdir -p $GIF_DIR
+          
+          # Use git diff to find exactly which files were Added (A), Modified (M), or Deleted (D)
+          # We check the difference between the latest commit (HEAD) and the one before it (HEAD~1)
+          git diff --name-status HEAD~1 HEAD -- "$VIDEO_DIR" | while read -r status file; do
+            # Only process .mp4 files
+            if [[ "$file" == *.mp4 ]]; then
+              filename=$(basename "$file" .mp4)
+              gif_path="$GIF_DIR/$filename.gif"
 
-          # A variable to hold the markdown for all our GIFs
-          MARKDOWN_OUTPUT=""
-
-          # Loop through each .mp4 file in the video directory
-          for video in $VIDEO_DIR/*.mp4; do
-            # Get the base filename without the extension (e.g., "test1")
-            filename=$(basename "$video" .mp4)
-            gif_path="$GIF_DIR/$filename.gif"
-
-            echo "Converting $video to $gif_path..."
-
-            # Use ffmpeg to convert the video to a GIF.
-            # The `-vf "fps=10,scale=480:-1"` part is crucial:
-            #   - fps=10: Sets the frame rate to 10 FPS (keeps file size down)
-            #   - scale=480:-1: Resizes the width to 480px and auto-adjusts height
-            ffmpeg -i "$video" -vf "fps=10,scale=480:-1:flags=lanczos" -y "$gif_path"
-
-            # Add the markdown for this GIF to our output variable
-            # This creates a link to the original high-quality MP4 file
-            MARKDOWN_OUTPUT+="### $filename\n[![Preview of $filename]($gif_path)](./$video)\n\n"
+              if [[ "$status" == "A" || "$status" == "M" ]]; then
+                echo "Action: GENERATE for $file"
+                ffmpeg -i "$file" -vf "fps=10,scale=480:-1:flags=lanczos" -y "$gif_path"
+              
+              elif [[ "$status" == "D" ]]; then
+                echo "Action: DELETE for $file"
+                # If the corresponding GIF exists, remove it
+                if [[ -f "$gif_path" ]]; then
+                  rm "$gif_path"
+                fi
+              fi
+            fi
           done
 
-          # Use a temporary file to safely replace the block in the README
-          # This is more robust than using `sed` directly for multi-line replacements
+      # 4. Regenerate README from current state
+      # This is the simplest and most robust way to handle all changes.
+      - name: Update README with current video list
+        run: |
+          VIDEO_DIR="media/videos/tests/1080p60"
+          GIF_DIR="media/videos/tests/1080p60/gifs"
+          README_FILE="README.md"
+          
+          MARKDOWN_OUTPUT=""
+          
+          # Loop through ALL .mp4 files that CURRENTLY exist to build the new list
+          # The `ls` command is sorted to ensure a consistent order in the README
+          for video in $(ls -1 $VIDEO_DIR/*.mp4 | sort); do
+            filename=$(basename "$video" .mp4)
+            # Only add to README if the corresponding GIF exists
+            if [[ -f "$GIF_DIR/$filename.gif" ]]; then
+              gif_path="$GIF_DIR/$filename.gif"
+              MARKDOWN_OUTPUT+="### $filename\n[![Preview of $filename]($gif_path)](./$video)\n\n"
+            fi
+          done
+
+          # Safely replace the block in the README
           awk -v gifs="$MARKDOWN_OUTPUT" '
             /<!-- START_GIFS -->/ { print; print gifs; f=1 }
             /<!-- END_GIFS -->/ { f=0 }
             !f { print }
           ' $README_FILE > tmp_readme && mv tmp_readme $README_FILE
 
-          echo "README.md has been updated."
+          echo "README.md has been regenerated."
 
-      # 4. Commit the new GIFs and the updated README back to the repo
+      # 5. Commit and Push Changes
       - name: Commit and Push Changes
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions@github.com'
-          git add media/videos/tests/1080p60/gifs/*
+          
+          # Add all changes in the tracked directory. This handles new, modified, AND deleted gifs.
+          git add media/videos/tests/1080p60/
           git add README.md
+          
           # Check if there are any changes to commit
           if ! git diff --staged --quiet; then
-            # The [skip ci] in the commit message is important!
-            # It tells GitHub Actions not to trigger this workflow again from this commit.
-            git commit -m "docs: Auto-generate video GIFs [skip ci]"
+            git commit -m "docs: Sync video GIFs and update README [skip ci]"
             git push
           else
             echo "No changes to commit."
