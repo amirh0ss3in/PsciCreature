@@ -16,8 +16,14 @@ Here are the latest test videos, automatically converted to GIFs.
 ### TestCreatureFullCapabilities
 [![Preview of TestCreatureFullCapabilities](media/videos/tests/1080p60/gifs/TestCreatureFullCapabilities.gif)](./media/videos/tests/1080p60/TestCreatureFullCapabilities.mp4)
 
+### TestMouthExpressions
+[![Preview of TestMouthExpressions](media/videos/tests/1080p60/gifs/TestMouthExpressions.gif)](./media/videos/tests/1080p60/TestMouthExpressions.mp4)
+
 ### TestSimplerResize
 [![Preview of TestSimplerResize](media/videos/tests/1080p60/gifs/TestSimplerResize.gif)](./media/videos/tests/1080p60/TestSimplerResize.mp4)
+
+### TestSize
+[![Preview of TestSize](media/videos/tests/1080p60/gifs/TestSize.gif)](./media/videos/tests/1080p60/TestSize.mp4)
 
 
 <!-- END_GIFS -->
