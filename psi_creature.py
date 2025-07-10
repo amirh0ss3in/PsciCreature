@@ -6,6 +6,34 @@ import os
 #  Unaltered Helper Classes (Sclera, Eye, Eyes)
 #  (These classes are correct and do not need changes)
 # ====================================================================
+class Become(Transform):
+    """
+    An animation that transforms one mobject into another, then replaces the
+    internal state of the original mobject with that of the target.
+
+    After the animation, the starting mobject will be visually and internally
+    indistinguishable from the target mobject. This allows for complex state
+    changes (like re-initializing with new parameters) without needing to
+    manually reassign the variable in your scene's `construct` method.
+    """
+    def __init__(self, mobject, target_mobject, **kwargs):
+        """
+        Args:
+            mobject: The Mobject to be transformed.
+            target_mobject: The Mobject to become. Its state will be copied
+                            into `mobject` at the end of the animation.
+        """
+        self.target_copy = target_mobject.copy()
+        super().__init__(mobject, target_mobject, **kwargs)
+
+    def finish(self) -> None:
+        """Called when the animation is finished."""
+        super().finish()
+        # The magic happens here:
+        # We replace the dictionary of the original mobject with the
+        # dictionary of the target mobject's copy. This effectively
+        # makes the original mobject "become" the target.
+        self.mobject.__dict__.update(self.target_copy.__dict__)
 
 class Sclera(VMobject):
     def __init__(self, width: float = 1.0, height: float = 1.0, **kwargs):
@@ -118,7 +146,7 @@ class Eyes(VGroup):
     def reset_squint(self, **kwargs) -> AnimationGroup: return AnimationGroup(self.left_eye.reset_squint(**kwargs), self.right_eye.reset_squint(**kwargs))
 
 # ====================================================================
-#  INTELLIGENT, ANCHOR-BASED PsiCreature CLASS (WITH FIX)
+#  PsiCreature CLASS WITH NEW `resize` METHOD
 # ====================================================================
 
 class PsiCreature(VGroup):
@@ -135,27 +163,24 @@ class PsiCreature(VGroup):
         **kwargs
     ):
         super().__init__(**kwargs)
+        # Store key creation parameters for resizing
+        self.body_scale = body_scale
+        self.eye_color = eye_color
 
         self.templates = {
             "default": SVGMobject("Psi.svg").set_color(body_color),
             "pondering": SVGMobject("Psi_hand_on_mouth_pondering.svg").set_color(body_color),
         }
         for template in self.templates.values():
-            template.set_height(body_scale)
+            template.set_height(self.body_scale)
 
         self.anchor_vectors = {
             state: template.submobjects[-1].get_center()
             for state, template in self.templates.items()
         }
 
-        # ==================================
-        #  THE GENIUS FIX IS HERE
-        # ==================================
-        # The default eye parameters are designed for the default body_scale of 2.0.
-        # We must adjust them proportionally if a different body_scale is provided.
         default_body_scale = 2.0
-        scale_factor = body_scale / default_body_scale
-
+        scale_factor = self.body_scale / default_body_scale
         scaled_eye_width = eye_width * scale_factor
         scaled_eye_height = eye_height * scale_factor
         scaled_eyes_separation = eyes_separation * scale_factor
@@ -164,15 +189,12 @@ class PsiCreature(VGroup):
             separation=scaled_eyes_separation,
             eye_width=scaled_eye_width,
             eye_height=scaled_eye_height,
-            iris_color=eye_color
+            iris_color=self.eye_color
         )
-        # ==================================
         
         self.eyes_offsets = {}
         for state, template in self.templates.items():
             stable_x = self.anchor_vectors[state][0]
-            # We now scale the y-offset for the eyes based on the proportional scale_factor
-            # to ensure they stay in the same relative position on the head.
             target_y = template.get_top()[1] - (self.eyes.get_height() * 0.9)
             eyes_center_in_template = np.array([stable_x, target_y, 0])
             self.eyes_offsets[state] = eyes_center_in_template - self.anchor_vectors[state]
@@ -194,27 +216,67 @@ class PsiCreature(VGroup):
         return mobj
 
     def change_state(self, new_state_name: str) -> AnimationGroup:
+        # This can also be improved with the Become pattern, but we'll leave it for now
+        # for simplicity, as it doesn't suffer from the same internal state issue.
         if new_state_name not in self.templates:
             raise ValueError(f"Cannot change to '{new_state_name}'; not a valid state.")
-
         target_body = self._create_body_at_anchor(new_state_name, self.anchor_pos)
         body_transform = Transform(self.body, target_body)
-
         eyes_new_pos = self.anchor_pos + self.eyes_offsets[new_state_name]
         eyes_move = self.eyes.animate.move_to(eyes_new_pos)
-
+        
         self.current_state_name = new_state_name
+        self.body.target = target_body
         return AnimationGroup(body_transform, eyes_move)
 
     def move_anchor_to(self, new_anchor_pos: np.ndarray) -> AnimationGroup:
         current_anchor_vector = self.anchor_vectors[self.current_state_name]
         body_move = self.body.animate.move_to(new_anchor_pos - current_anchor_vector)
-
         current_eyes_offset = self.eyes_offsets[self.current_state_name]
         eyes_move = self.eyes.animate.move_to(new_anchor_pos + current_eyes_offset)
-
         self.anchor_pos = new_anchor_pos
         return AnimationGroup(body_move, eyes_move)
+
+    # ====================================================================
+    #  IMPROVED: Simple `resize` method
+    # ====================================================================
+    def resize(self, scale_factor: float, **kwargs) -> Become:
+        """
+        Returns an animation that resizes the creature.
+        
+        This method correctly re-initializes all internal components (like eyes)
+        to work at the new scale. It uses the `Become` animation to update the
+        creature in place, so you don't need to reassign your variable.
+
+        Args:
+            scale_factor (float): The factor by which to scale the creature.
+            **kwargs: Animation-related keyword arguments (e.g., run_time).
+
+        Returns:
+            Become: The animation to be played in a scene.
+
+        Usage in a Scene:
+            psi = PsiCreature(body_scale=1.0)
+            self.add(psi)
+            self.play(psi.resize(3.0, run_time=2)) # Simple and intuitive
+            # Now, psi is larger and all its methods will work correctly.
+            self.play(psi.squint(PI/4))
+        """
+        new_body_scale = self.body_scale * scale_factor
+
+        # Create a new target creature with the new scale, inheriting the
+        # current creature's state, position, and colors.
+        target_creature = PsiCreature(
+            initial_anchor_pos=self.anchor_pos,
+            initial_state=self.current_state_name,
+            body_color=self.templates[self.current_state_name].get_color(),
+            eye_color=self.eye_color,
+            body_scale=new_body_scale,
+        )
+
+        # Return the 'Become' animation, which handles the visual transform
+        # and the internal state update automatically.
+        return Become(self, target_creature, **kwargs)
 
     # Delegate all eye methods
     def blink(self, **kwargs) -> AnimationGroup: return self.eyes.blink(**kwargs)
@@ -335,4 +397,34 @@ class TestSize(Scene):
             psi_big.blink()
         )
 
+        self.wait(2)
+
+class TestSimplerResize(Scene):
+    def construct(self):
+        title = Text("Testing the Simpler 'resize' Method").to_edge(UP)
+        self.add(title)
+
+        # 1. Create the initial creature
+        psi = PsiCreature(body_scale=1.0, eye_color=TEAL)
+        self.play(FadeIn(psi))
+        self.wait(1)
+        self.play(psi.move_anchor_to(LEFT * 4))
+        self.wait(1)
+
+        # 2. Resize the creature using the new, simple syntax
+        self.play(psi.move_anchor_to(ORIGIN), psi.resize(3.5, run_time=2))
+        # No need to reassign `psi`. It has now "become" the larger creature.
+        self.wait(1)
+
+        # 3. Prove that subsequent animations work correctly on the resized creature
+        self.play(psi.bend_sclera(UP + RIGHT))
+        self.wait(1)
+        self.play(psi.reset_sclera(),
+                  psi.squint(PI/4, run_time=0.5, rate_func=there_and_back))
+        self.wait(1)
+
+        # 4. All other methods remain fully functional
+        self.play(psi.move_anchor_to(RIGHT * 4))
+        self.play(psi.change_state("pondering"))
+        self.play(psi.blink())
         self.wait(2)
