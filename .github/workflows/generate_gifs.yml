@@ -13,6 +13,11 @@ on:
       - 'media/videos/tests/1080p60/**.mp4'
 
 jobs:
+
+    # Explicitly give the GITHUB_TOKEN permissions to write to the repository
+    permissions:
+      contents: write
+
   build_gifs:
     runs-on: ubuntu-latest
 
