@@ -170,6 +170,7 @@ class PsiCreature(VGroup):
         self.templates = {
             "default": SVGMobject("Psi.svg").set_color(body_color),
             "pondering": SVGMobject("Psi_hand_on_mouth_pondering.svg").set_color(body_color),
+            "hand_up": SVGMobject("Psi_hand_up.svg").set_color(body_color),
         }
         for template in self.templates.values():
             template.set_height(self.body_scale)
