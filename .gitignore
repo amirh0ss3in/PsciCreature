@@ -1,2 +1,9 @@
-media/ 
+**media/*
+!**media/videos/
+
+**media/videos/*
+!**media/videos/tests/
+
+media/videos/tests/1080p60/partial_movie_files/
+
 __pycache__/
