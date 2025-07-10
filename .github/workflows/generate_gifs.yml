@@ -19,79 +19,129 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0 
 
-      - name: Check for Conversion Task
-        id: check_for_conversion
+      # This is the new, definitive, hash-based sync logic.
+      - name: Sync and Process Videos (Hash-Based)
+        id: sync_and_process
         run: |
-          echo "Checking for Added or Modified MP4 files..."
-          if git diff --name-status ${{ github.event.before }} ${{ github.event.after }} -- "media/videos/tests/1080p60" | grep -q -E "^(A|M).*\.mp4"; then
-            echo "Conversion is needed. Setting output 'needs_conversion=true'."
-            echo "needs_conversion=true" >> $GITHUB_OUTPUT
-          else
-            echo "No conversion needed (only deletions or no changes)."
-            echo "needs_conversion=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup FFmpeg
-        if: steps.check_for_conversion.outputs.needs_conversion == 'true'
-        run: |
-          echo "Installing FFmpeg because new/modified videos were detected."
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Sync GIF files based on changes
-        run: |
+          # --- Setup ---
           VIDEO_DIR="media/videos/tests/1080p60"
           GIF_DIR="media/videos/tests/1080p60/gifs"
+          MANIFEST_FILE="$GIF_DIR/gif.manifest"
           mkdir -p $GIF_DIR
           
-          git diff --name-status ${{ github.event.before }} ${{ github.event.after }} -- "$VIDEO_DIR" | while read -r status file; do
-            if [[ "$file" == *.mp4 ]]; then
-              filename=$(basename "$file" .mp4)
-              gif_path="$GIF_DIR/$filename.gif"
+          # Use associative arrays (dictionaries) for robust state tracking
+          declare -A current_mp4_hashes
+          declare -A previous_gif_hashes
+          
+          # --- Part 1: Build a map of the CURRENT state ---
+          echo "Building map of current MP4 file hashes..."
+          for video in $(ls -1 $VIDEO_DIR/*.mp4 2>/dev/null); do
+            filename=$(basename "$video" .mp4)
+            # 'git hash-object' provides a unique content hash (checksum) for the file
+            hash=$(git hash-object "$video")
+            current_mp4_hashes["$filename"]=$hash
+          done
 
-              if [[ "$status" == "A" || "$status" == "M" ]]; then
-                echo "Action: GENERATE for $file"
-                ffmpeg -i "$file" -vf "fps=10,scale=480:-1:flags=lanczos" -y "$gif_path"
-              
-              elif [[ "$status" == "D" ]]; then
-                echo "Action: DELETE for $file"
-                if [[ -f "$gif_path" ]]; then
-                  rm "$gif_path"
-                fi
-              fi
+          # --- Part 2: Load the PREVIOUS state from the manifest file ---
+          echo "Loading previous state from manifest..."
+          if [[ -f "$MANIFEST_FILE" ]]; then
+            while read -r filename hash; do
+              previous_gif_hashes["$filename"]=$hash
+            done < "$MANIFEST_FILE"
+          fi
+          
+          # --- Part 3: Compare states and determine what work needs to be done ---
+          echo "Comparing states to determine work..."
+          CONVERT_LIST=""
+          DELETE_LIST=""
+
+          # Check for NEW or UPDATED videos
+          for filename in "${!current_mp4_hashes[@]}"; do
+            current_hash=${current_mp4_hashes[$filename]}
+            previous_hash=${previous_gif_hashes[$filename]}
+            
+            # If the video didn't exist before, OR its content hash has changed...
+            if [[ -z "$previous_hash" || "$current_hash" != "$previous_hash" ]]; then
+              echo "NEEDS CONVERSION: $filename (Reason: $([[ -z "$previous_hash" ]] && echo "New" || echo "Updated"))"
+              CONVERT_LIST+="$VIDEO_DIR/$filename.mp4 "
+            fi
+          done
+          
+          # Check for DELETED videos
+          for filename in "${!previous_gif_hashes[@]}"; do
+            if [[ -z "${current_mp4_hashes[$filename]}" ]]; then
+              echo "STALE GIF DETECTED: $filename"
+              DELETE_LIST+="$GIF_DIR/$filename.gif "
             fi
           done
 
-      - name: Update README with current video list
+          # --- Part 4: Execute the work ---
+          if [[ -n "$CONVERT_LIST" ]]; then
+            echo "Installing FFmpeg..."
+            sudo apt-get update && sudo apt-get install -y ffmpeg
+            for video_to_convert in $CONVERT_LIST; do
+              filename=$(basename "$video_to_convert" .mp4)
+              echo "Action: GENERATING $filename.gif"
+              ffmpeg -i "$video_to_convert" -vf "fps=10,scale=480:-1:flags=lanczos" -y "$GIF_DIR/$filename.gif"
+            done
+          fi
+
+          if [[ -n "$DELETE_LIST" ]]; then
+            for gif_to_delete in $DELETE_LIST; do
+              echo "Action: DELETING $gif_to_delete"
+              rm "$gif_to_delete"
+            done
+          fi
+
+          # --- Part 5: Set output for commit step ---
+          if [[ -n "$CONVERT_LIST" || -n "$DELETE_LIST" ]]; then
+            echo "changes_made=true" >> $GITHUB_OUTPUT
+          else
+            echo "No content changes detected. All GIFs are up to date."
+            echo "changes_made=false" >> $GITHUB_OUTPUT
+          fi
+
+
+      # This step only runs if a change was made
+      - name: Update Manifest and README
+        if: steps.sync_and_process.outputs.changes_made == 'true'
         run: |
           VIDEO_DIR="media/videos/tests/1080p60"
           GIF_DIR="media/videos/tests/1080p60/gifs"
+          MANIFEST_FILE="$GIF_DIR/gif.manifest"
           README_FILE="README.md"
-          MARKDOWN_OUTPUT=""
           
+          # Regenerate the manifest file from the current state. This is crucial.
+          echo "Updating manifest file: $MANIFEST_FILE"
+          > "$MANIFEST_FILE" # Clear the file
           for video in $(ls -1 $VIDEO_DIR/*.mp4 2>/dev/null | sort); do
             filename=$(basename "$video" .mp4)
-            if [[ -f "$GIF_DIR/$filename.gif" ]]; then
-              gif_path="$GIF_DIR/$filename.gif"
-              MARKDOWN_OUTPUT+="### $filename\n[![Preview of $filename]($gif_path)](./$video)\n\n"
-            fi
+            hash=$(git hash-object "$video")
+            echo "$filename $hash" >> "$MANIFEST_FILE"
           done
 
+          # Regenerate the README section from the current state of existing GIFs
+          echo "Updating README.md"
+          MARKDOWN_OUTPUT=""
+          for gif in $(ls -1 $GIF_DIR/*.gif 2>/dev/null | sort); do
+            filename=$(basename "$gif" .gif)
+            video_path="$VIDEO_DIR/$filename.mp4"
+            if [[ -f "$video_path" ]]; then
+               MARKDOWN_OUTPUT+="### $filename\n[![Preview of $filename]($gif)](./$video_path)\n\n"
+            fi
+          done
           awk -v gifs="$MARKDOWN_OUTPUT" '/<!-- START_GIFS -->/{print;print gifs;f=1} /<!-- END_GIFS -->/{f=0} !f{print}' $README_FILE > tmp_readme && mv tmp_readme $README_FILE
-          echo "README.md has been regenerated."
+
 
       - name: Commit and Push Changes
+        if: steps.sync_and_process.outputs.changes_made == 'true'
         run: |
+          echo "Committing changes to repository..."
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions@github.com'
+          # Add the entire directory, which stages new/modified GIFs, the manifest, and removals.
           git add media/videos/tests/1080p60/
           git add README.md
-          if ! git diff --staged --quiet; then
-            git commit -m "docs: Sync video GIFs and update README [skip ci]"
-            git push
-          else
-            echo "No changes to commit."
-          fi
+          git commit -m "docs: Sync video GIFs and update README [skip ci]"
+          git push
