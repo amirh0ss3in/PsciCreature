@@ -8,6 +8,7 @@ on:
       - main
     paths:
       - 'media/videos/tests/1080p60/**.mp4'
+      - '.github/workflows/generate_gifs.yml'
 
 jobs:
   build_and_sync_gifs:
@@ -16,19 +17,15 @@ jobs:
       contents: write
 
     steps:
-      # 1. Checkout Repo. We no longer need fetch-depth: 0, as we use explicit SHAs.
       - name: Checkout Repo
         uses: actions/checkout@v3
-        # We need to fetch the 'before' commit so we can diff against it.
         with:
           fetch-depth: 0 
 
-      # 2. Check if any files were Added/Modified, REQUIRING conversion
       - name: Check for Conversion Task
         id: check_for_conversion
         run: |
           echo "Checking for Added or Modified MP4 files..."
-          # Use the exact 'before' and 'after' SHAs from the push event. This is the robust way.
           if git diff --name-status ${{ github.event.before }} ${{ github.event.after }} -- "media/videos/tests/1080p60" | grep -q -E "^(A|M).*\.mp4"; then
             echo "Conversion is needed. Setting output 'needs_conversion=true'."
             echo "needs_conversion=true" >> $GITHUB_OUTPUT
@@ -37,7 +34,6 @@ jobs:
             echo "needs_conversion=false" >> $GITHUB_OUTPUT
           fi
 
-      # 3. Conditionally install FFmpeg
       - name: Setup FFmpeg
         if: steps.check_for_conversion.outputs.needs_conversion == 'true'
         run: |
@@ -45,14 +41,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # 4. Intelligent Sync: Process only what changed
       - name: Sync GIF files based on changes
         run: |
           VIDEO_DIR="media/videos/tests/1080p60"
           GIF_DIR="media/videos/tests/1080p60/gifs"
           mkdir -p $GIF_DIR
           
-          # CRITICAL: Use the same robust diff command here.
           git diff --name-status ${{ github.event.before }} ${{ github.event.after }} -- "$VIDEO_DIR" | while read -r status file; do
             if [[ "$file" == *.mp4 ]]; then
               filename=$(basename "$file" .mp4)
@@ -71,7 +65,6 @@ jobs:
             fi
           done
 
-      # 5. Regenerate README from current state (unchanged)
       - name: Update README with current video list
         run: |
           VIDEO_DIR="media/videos/tests/1080p60"
@@ -90,7 +83,6 @@ jobs:
           awk -v gifs="$MARKDOWN_OUTPUT" '/<!-- START_GIFS -->/{print;print gifs;f=1} /<!-- END_GIFS -->/{f=0} !f{print}' $README_FILE > tmp_readme && mv tmp_readme $README_FILE
           echo "README.md has been regenerated."
 
-      # 6. Commit and Push Changes (unchanged)
       - name: Commit and Push Changes
         run: |
           git config --global user.name 'GitHub Actions Bot'
