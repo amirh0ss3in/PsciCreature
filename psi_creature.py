@@ -146,7 +146,59 @@ class Eyes(VGroup):
     def reset_squint(self, **kwargs) -> AnimationGroup: return AnimationGroup(self.left_eye.reset_squint(**kwargs), self.right_eye.reset_squint(**kwargs))
 
 # ====================================================================
-#  PsiCreature CLASS WITH NEW `resize` METHOD
+#  Mouth Class
+# ====================================================================
+class Mouth(VGroup):
+    def __init__(
+        self,
+        emotion: str = "neutral",
+        width: float = 0.01,
+        emotion_intensity: float = 0.1,
+        **kwargs
+    ):
+        super().__init__()
+        self.emotion = emotion
+        self.width = width
+        self.emotion_intensity = emotion_intensity
+        self.bezier_kwargs = kwargs.copy()
+        if "color" not in kwargs:
+            kwargs["color"] = BLACK
+        if "stroke_width" not in kwargs:
+            kwargs["stroke_width"] = 2
+        start_point = LEFT * width / 2
+        end_point = RIGHT * width / 2
+        handle_base_1 = LEFT * width / 4
+        handle_base_2 = RIGHT * width / 4
+        if emotion == "happy":
+            handle1 = handle_base_1 + DOWN * emotion_intensity
+            handle2 = handle_base_2 + DOWN * emotion_intensity
+        elif emotion == "sad":
+            handle1 = handle_base_1 + UP * emotion_intensity
+            handle2 = handle_base_2 + UP * emotion_intensity
+        elif emotion == "unsure":
+            handle1 = handle_base_1 + UP * emotion_intensity * 0.4
+            handle2 = handle_base_2 + DOWN * emotion_intensity * 0.7
+        elif emotion == "neutral":
+            handle1 = handle_base_1
+            handle2 = handle_base_2
+        elif emotion == "happy_smirk":
+            handle1 = handle_base_1 + LEFT * emotion_intensity * 0.4
+            handle2 = handle_base_2 + DOWN * emotion_intensity * 0.7
+            start_point += 0.08*UP
+            end_point += 0.08*DOWN
+        elif emotion == "sad_smirk":
+            handle1 = handle_base_1 - RIGHT * emotion_intensity * 0.4
+            handle2 = handle_base_2 - DOWN * emotion_intensity * 0.5
+            start_point += 0.08*DOWN
+            end_point += 0.04*UP
+        else: # Default to neutral
+            handle1 = handle_base_1
+            handle2 = handle_base_2
+        mouth_curve = CubicBezier(start_point, handle1, handle2, end_point, **kwargs)
+        self.add(mouth_curve)
+
+# ====================================================================
+#  PsiCreature CLASS - FULLY CORRECTED AND IMPROVED
 # ====================================================================
 
 class PsiCreature(VGroup):
@@ -154,18 +206,25 @@ class PsiCreature(VGroup):
         self,
         initial_anchor_pos: np.ndarray = ORIGIN,
         initial_state: str = "default",
+        initial_emotion: str = "neutral",
         body_color: ManimColor = BLUE_E,
         eye_color: ManimColor = BLUE_C,
         body_scale: float = 2.0,
         eyes_separation: float = 0.48,
         eye_width: float = 0.3,
         eye_height: float = 0.3,
+        mouth_width: float = 0.25,
+        mouth_emotion_intensity: float = 0.1,
+        mouth_kwargs: dict = None,
         **kwargs
     ):
         super().__init__(**kwargs)
-        # Store key creation parameters for resizing
+        # Store key *unscaled* creation parameters for resizing
         self.body_scale = body_scale
         self.eye_color = eye_color
+        self.mouth_width = mouth_width
+        self.mouth_emotion_intensity = mouth_emotion_intensity
+        self.mouth_kwargs = mouth_kwargs or {}
 
         self.templates = {
             "default": SVGMobject("Psi.svg").set_color(body_color),
@@ -180,11 +239,22 @@ class PsiCreature(VGroup):
             for state, template in self.templates.items()
         }
 
+        # --- THIS IS THE CENTRAL SCALING LOGIC ---
         default_body_scale = 2.0
         scale_factor = self.body_scale / default_body_scale
+
+        # Calculate scaled dimensions for all components
         scaled_eye_width = eye_width * scale_factor
         scaled_eye_height = eye_height * scale_factor
         scaled_eyes_separation = eyes_separation * scale_factor
+        scaled_mouth_width = self.mouth_width * scale_factor
+        scaled_mouth_emotion_intensity = self.mouth_emotion_intensity * scale_factor
+
+        # Scale mouth stroke width
+        final_mouth_kwargs = self.mouth_kwargs.copy()
+        base_stroke_width = final_mouth_kwargs.get("stroke_width", 2)
+        final_mouth_kwargs["stroke_width"] = base_stroke_width * scale_factor
+        # --- END OF SCALING LOGIC ---
 
         self.eyes = Eyes(
             separation=scaled_eyes_separation,
@@ -192,13 +262,23 @@ class PsiCreature(VGroup):
             eye_height=scaled_eye_height,
             iris_color=self.eye_color
         )
+        self.mouth = Mouth(
+            emotion=initial_emotion,
+            width=scaled_mouth_width,
+            emotion_intensity=scaled_mouth_emotion_intensity,
+            **final_mouth_kwargs
+        )
         
         self.eyes_offsets = {}
+        self.mouth_offsets = {}
         for state, template in self.templates.items():
             stable_x = self.anchor_vectors[state][0]
-            target_y = template.get_top()[1] - (self.eyes.get_height() * 0.9)
-            eyes_center_in_template = np.array([stable_x, target_y, 0])
+            target_y_eyes = template.get_top()[1] - (self.eyes.get_height() * 0.9)
+            eyes_center_in_template = np.array([stable_x, target_y_eyes, 0])
             self.eyes_offsets[state] = eyes_center_in_template - self.anchor_vectors[state]
+            target_y_mouth = self.anchor_vectors[state][1] + (self.body_scale * 0.15)
+            mouth_center_in_template = np.array([stable_x, target_y_mouth, 0])
+            self.mouth_offsets[state] = mouth_center_in_template - self.anchor_vectors[state]
 
         if initial_state not in self.templates:
             raise ValueError(f"Initial state '{initial_state}' is not valid.")
@@ -207,7 +287,8 @@ class PsiCreature(VGroup):
 
         self.body = self._create_body_at_anchor(self.current_state_name, self.anchor_pos)
         self.eyes.move_to(self.anchor_pos + self.eyes_offsets[self.current_state_name])
-        self.add(self.body, self.eyes)
+        self.mouth.move_to(self.anchor_pos + self.mouth_offsets[self.current_state_name])
+        self.add(self.body, self.eyes, self.mouth)
 
     def _create_body_at_anchor(self, state_name, anchor_target_pos):
         template = self.templates[state_name]
@@ -217,69 +298,57 @@ class PsiCreature(VGroup):
         return mobj
 
     def change_state(self, new_state_name: str) -> AnimationGroup:
-        # This can also be improved with the Become pattern, but we'll leave it for now
-        # for simplicity, as it doesn't suffer from the same internal state issue.
         if new_state_name not in self.templates:
             raise ValueError(f"Cannot change to '{new_state_name}'; not a valid state.")
         target_body = self._create_body_at_anchor(new_state_name, self.anchor_pos)
         body_transform = Transform(self.body, target_body)
         eyes_new_pos = self.anchor_pos + self.eyes_offsets[new_state_name]
         eyes_move = self.eyes.animate.move_to(eyes_new_pos)
+        mouth_new_pos = self.anchor_pos + self.mouth_offsets[new_state_name]
+        mouth_move = self.mouth.animate.move_to(mouth_new_pos)
         
         self.current_state_name = new_state_name
         self.body.target = target_body
-        return AnimationGroup(body_transform, eyes_move)
+        return AnimationGroup(body_transform, eyes_move, mouth_move)
 
     def move_anchor_to(self, new_anchor_pos: np.ndarray) -> AnimationGroup:
         current_anchor_vector = self.anchor_vectors[self.current_state_name]
         body_move = self.body.animate.move_to(new_anchor_pos - current_anchor_vector)
         current_eyes_offset = self.eyes_offsets[self.current_state_name]
         eyes_move = self.eyes.animate.move_to(new_anchor_pos + current_eyes_offset)
+        current_mouth_offset = self.mouth_offsets[self.current_state_name]
+        mouth_move = self.mouth.animate.move_to(new_anchor_pos + current_mouth_offset)
         self.anchor_pos = new_anchor_pos
-        return AnimationGroup(body_move, eyes_move)
+        return AnimationGroup(body_move, eyes_move, mouth_move)
 
-    # ====================================================================
-    #  IMPROVED: Simple `resize` method
-    # ====================================================================
     def resize(self, scale_factor: float, **kwargs) -> Become:
-        """
-        Returns an animation that resizes the creature.
-        
-        This method correctly re-initializes all internal components (like eyes)
-        to work at the new scale. It uses the `Become` animation to update the
-        creature in place, so you don't need to reassign your variable.
-
-        Args:
-            scale_factor (float): The factor by which to scale the creature.
-            **kwargs: Animation-related keyword arguments (e.g., run_time).
-
-        Returns:
-            Become: The animation to be played in a scene.
-
-        Usage in a Scene:
-            psi = PsiCreature(body_scale=1.0)
-            self.add(psi)
-            self.play(psi.resize(3.0, run_time=2)) # Simple and intuitive
-            # Now, psi is larger and all its methods will work correctly.
-            self.play(psi.squint(PI/4))
-        """
         new_body_scale = self.body_scale * scale_factor
-
-        # Create a new target creature with the new scale, inheriting the
-        # current creature's state, position, and colors.
         target_creature = PsiCreature(
             initial_anchor_pos=self.anchor_pos,
             initial_state=self.current_state_name,
+            initial_emotion=self.mouth.emotion,
             body_color=self.templates[self.current_state_name].get_color(),
             eye_color=self.eye_color,
             body_scale=new_body_scale,
+            mouth_width=self.mouth_width, # Pass unscaled value
+            mouth_emotion_intensity=self.mouth_emotion_intensity, # Pass unscaled value
+            mouth_kwargs=self.mouth_kwargs # Pass original kwargs
         )
-
-        # Return the 'Become' animation, which handles the visual transform
-        # and the internal state update automatically.
         return Become(self, target_creature, **kwargs)
 
-    # Delegate all eye methods
+    def change_mouth(self, new_emotion: str, **kwargs) -> Become:
+        # Create the new mouth using the CURRENTLY scaled parameters
+        # from the existing mouth to ensure consistency.
+        target_mouth = Mouth(
+            emotion=new_emotion,
+            width=self.mouth.width,
+            emotion_intensity=self.mouth.emotion_intensity,
+            **self.mouth.bezier_kwargs
+        )
+        target_mouth.move_to(self.mouth)
+        return Become(self.mouth, target_mouth, **kwargs)
+
+    # Delegate eye and mouth methods
     def blink(self, **kwargs) -> AnimationGroup: return self.eyes.blink(**kwargs)
     def look_at(self, target, **kwargs) -> AnimationGroup: return self.eyes.look_at(target, **kwargs)
     def look_straight(self, **kwargs) -> AnimationGroup: return self.eyes.look_straight(**kwargs)
@@ -427,5 +496,48 @@ class TestSimplerResize(Scene):
         # 4. All other methods remain fully functional
         self.play(psi.move_anchor_to(RIGHT * 4))
         self.play(psi.change_state("pondering"))
+        self.play(psi.blink())
+        self.wait(2)
+
+
+class TestMouthExpressions(Scene):
+    def construct(self):
+        title = Text("Testing Mouth Expressions and Integration").to_edge(UP)
+        self.add(title)
+
+        # 1. Create creature with non-default stroke width
+        psi = PsiCreature(
+            body_scale=3.0, 
+            eye_color=PURPLE_B,
+        )
+        self.play(FadeIn(psi))
+        self.wait(1)
+
+        # 2. Cycle through mouth expressions
+        self.play(psi.change_mouth("happy", run_time=0.5))
+        self.wait(1)
+        self.play(psi.change_mouth("sad", run_time=0.5))
+        self.wait(1)
+        self.play(psi.change_mouth("unsure", run_time=0.7))
+        self.wait(1)
+        self.play(psi.change_mouth("happy_smirk", run_time=0.7))
+        self.wait(1)
+        self.play(psi.change_mouth("sad_smirk", run_time=0.7))
+        self.wait(1)
+        
+        # 3. Test that mouth moves correctly with the body
+        self.play(psi.move_anchor_to(LEFT * 4))
+        self.play(psi.change_state("pondering"))
+        self.play(psi.change_mouth("happy_smirk"))
+        self.wait(2)
+
+        # 4. Test that mouth resizes correctly.
+        #    Notice the mouth stroke becomes thinner and the 'unsure' expression
+        #    is proportionally less intense, maintaining the same look.
+        self.play(psi.move_anchor_to(ORIGIN), psi.resize(0.5, run_time=2))
+        self.wait(1)
+
+        # 5. Prove the resized mouth can still change expressions correctly.
+        self.play(psi.change_mouth("happy"))
         self.play(psi.blink())
         self.wait(2)
