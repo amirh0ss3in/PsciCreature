@@ -16,8 +16,5 @@ Here are the latest test videos, automatically converted to GIFs.
 ### TestMouthExpressions
 [![Preview of TestMouthExpressions](media/videos/tests/1080p60/gifs/TestMouthExpressions.gif)](./media/videos/tests/1080p60/TestMouthExpressions.mp4)
 
-### TestSimplerResize
-[![Preview of TestSimplerResize](media/videos/tests/1080p60/gifs/TestSimplerResize.gif)](./media/videos/tests/1080p60/TestSimplerResize.mp4)
-
 
 <!-- END_GIFS -->
