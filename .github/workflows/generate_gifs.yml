@@ -7,7 +7,6 @@ on:
     branches:
       - main
     paths:
-      # Trigger on any change to mp4 files, even deletion
       - 'media/videos/tests/1080p60/**.mp4'
 
 jobs:
@@ -17,43 +16,57 @@ jobs:
       contents: write
 
     steps:
-      # 1. Check out the repository code
-      # fetch-depth: 2 is CRITICAL. It fetches the last 2 commits
-      # so we can run `git diff` between the current and previous state.
+      # 1. Check out the repository code (needs fetch-depth: 2 for git diff)
       - name: Checkout Repo
         uses: actions/checkout@v3
         with:
           fetch-depth: 2
 
-      # 2. Set up FFmpeg
-      - name: Setup FFmpeg
+      # 2. NEW: Check if any files were Added/Modified, REQUIRING conversion
+      - name: Check for Conversion Task
+        id: check_for_conversion
         run: |
+          echo "Checking for Added or Modified MP4 files..."
+          # `git diff` gets changes between the last two commits.
+          # `grep -q` quietly checks if any lines start with "A" (Added) or "M" (Modified)
+          # and end in ".mp4". It sets an exit code of 0 (true) if found.
+          if git diff --name-status HEAD~1 HEAD -- "media/videos/tests/1080p60" | grep -q -E "^(A|M).*\.mp4"; then
+            echo "Conversion is needed. Setting output 'needs_conversion=true'."
+            echo "needs_conversion=true" >> $GITHUB_OUTPUT
+          else
+            echo "No conversion needed (only deletions or no changes)."
+            echo "needs_conversion=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 3. Conditionally install FFmpeg
+      # This step will ONLY run if the previous step set needs_conversion to 'true'
+      - name: Setup FFmpeg
+        if: steps.check_for_conversion.outputs.needs_conversion == 'true'
+        run: |
+          echo "Installing FFmpeg because new/modified videos were detected."
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # 3. Intelligent Sync: Process only what changed
+      # 4. Intelligent Sync: This step runs every time, but its internal logic is already smart.
       - name: Sync GIF files based on changes
-        id: sync_gifs
         run: |
           VIDEO_DIR="media/videos/tests/1080p60"
           GIF_DIR="media/videos/tests/1080p60/gifs"
           mkdir -p $GIF_DIR
           
-          # Use git diff to find exactly which files were Added (A), Modified (M), or Deleted (D)
-          # We check the difference between the latest commit (HEAD) and the one before it (HEAD~1)
           git diff --name-status HEAD~1 HEAD -- "$VIDEO_DIR" | while read -r status file; do
-            # Only process .mp4 files
             if [[ "$file" == *.mp4 ]]; then
               filename=$(basename "$file" .mp4)
               gif_path="$GIF_DIR/$filename.gif"
 
+              # This block will only be entered if ffmpeg was installed
               if [[ "$status" == "A" || "$status" == "M" ]]; then
                 echo "Action: GENERATE for $file"
                 ffmpeg -i "$file" -vf "fps=10,scale=480:-1:flags=lanczos" -y "$gif_path"
               
+              # This block runs fine without ffmpeg
               elif [[ "$status" == "D" ]]; then
                 echo "Action: DELETE for $file"
-                # If the corresponding GIF exists, remove it
                 if [[ -f "$gif_path" ]]; then
                   rm "$gif_path"
                 fi
@@ -61,47 +74,34 @@ jobs:
             fi
           done
 
-      # 4. Regenerate README from current state
-      # This is the simplest and most robust way to handle all changes.
+      # 5. Regenerate README from current state
       - name: Update README with current video list
         run: |
+          # (This step is unchanged)
           VIDEO_DIR="media/videos/tests/1080p60"
           GIF_DIR="media/videos/tests/1080p60/gifs"
           README_FILE="README.md"
-          
           MARKDOWN_OUTPUT=""
           
-          # Loop through ALL .mp4 files that CURRENTLY exist to build the new list
-          # The `ls` command is sorted to ensure a consistent order in the README
-          for video in $(ls -1 $VIDEO_DIR/*.mp4 | sort); do
+          for video in $(ls -1 $VIDEO_DIR/*.mp4 2>/dev/null | sort); do
             filename=$(basename "$video" .mp4)
-            # Only add to README if the corresponding GIF exists
             if [[ -f "$GIF_DIR/$filename.gif" ]]; then
               gif_path="$GIF_DIR/$filename.gif"
               MARKDOWN_OUTPUT+="### $filename\n[![Preview of $filename]($gif_path)](./$video)\n\n"
             fi
           done
 
-          # Safely replace the block in the README
-          awk -v gifs="$MARKDOWN_OUTPUT" '
-            /<!-- START_GIFS -->/ { print; print gifs; f=1 }
-            /<!-- END_GIFS -->/ { f=0 }
-            !f { print }
-          ' $README_FILE > tmp_readme && mv tmp_readme $README_FILE
-
+          awk -v gifs="$MARKDOWN_OUTPUT" '/<!-- START_GIFS -->/{print;print gifs;f=1} /<!-- END_GIFS -->/{f=0} !f{print}' $README_FILE > tmp_readme && mv tmp_readme $README_FILE
           echo "README.md has been regenerated."
 
-      # 5. Commit and Push Changes
+      # 6. Commit and Push Changes
       - name: Commit and Push Changes
         run: |
+          # (This step is unchanged)
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions@github.com'
-          
-          # Add all changes in the tracked directory. This handles new, modified, AND deleted gifs.
           git add media/videos/tests/1080p60/
           git add README.md
-          
-          # Check if there are any changes to commit
           if ! git diff --staged --quiet; then
             git commit -m "docs: Sync video GIFs and update README [skip ci]"
             git push
