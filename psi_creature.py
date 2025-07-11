@@ -286,7 +286,7 @@ class PsiCreature(VGroup):
             target_y_eyes = template.get_top()[1] - (self.eyes.get_height() * 0.9)
             eyes_center_in_template = np.array([stable_x, target_y_eyes, 0])
             self.eyes_offsets[state] = eyes_center_in_template - self.anchor_vectors[state]
-            target_y_mouth = self.anchor_vectors[state][1] + (self.body_scale * 0.15)
+            target_y_mouth = self.anchor_vectors[state][1] + (self.body_scale * 0.2)
             mouth_center_in_template = np.array([stable_x, target_y_mouth, 0])
             self.mouth_offsets[state] = mouth_center_in_template - self.anchor_vectors[state]
 
