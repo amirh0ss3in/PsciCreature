@@ -226,11 +226,21 @@ class PsiCreature(VGroup):
         self.mouth_emotion_intensity = mouth_emotion_intensity
         self.mouth_kwargs = mouth_kwargs or {}
 
-        self.templates = {
-            "default": SVGMobject("Psi.svg").set_color(body_color),
-            "pondering": SVGMobject("Psi_hand_on_mouth_pondering.svg").set_color(body_color),
-            "hand_up": SVGMobject("Psi_hand_up.svg").set_color(body_color),
-        }
+        # assets directory:
+        self.templates = {}
+        assets_dir = "assets"
+        for filename in os.listdir(assets_dir):
+            # Check if the file is an SVG file
+            if filename.endswith(".svg"):
+                # Construct the full path to the SVG file
+                svg_path = os.path.join(assets_dir, filename)
+
+                # Get the template name by removing the extension
+                template_name = os.path.splitext(filename)[0]
+
+                # Create the SVGMobject and add it to the dictionary
+                self.templates[template_name] = SVGMobject(svg_path).set_color(body_color)
+
         for template in self.templates.values():
             template.set_height(self.body_scale)
 
