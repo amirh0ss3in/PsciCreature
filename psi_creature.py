@@ -307,19 +307,80 @@ class PsiCreature(VGroup):
         mobj.move_to(anchor_target_pos - anchor_vector)
         return mobj
 
-    def change_state(self, new_state_name: str) -> AnimationGroup:
+    def change_state(
+        self,
+        new_state_name: str,
+        look_at_target: Mobject | np.ndarray = None,
+        look_straight: bool = False,
+        change_mouth_to: str = None,
+        squint_amount: float = None,
+        reset_squint: bool = False,
+        bend_direction: np.ndarray = None,
+        bend_intensity: float = 0.4,
+        reset_sclera: bool = False,
+        **kwargs
+    ) -> AnimationGroup:
+        """
+        Creates a unified animation for changing the creature's state, expression,
+        and gaze, avoiding animation conflicts.
+
+        Args:
+            new_state_name (str): The target body shape (e.g., "pondering").
+            look_at_target (Mobject | np.ndarray, optional): A point or Mobject to look at.
+            look_straight (bool, optional): If True, makes the creature look straight ahead.
+            change_mouth_to (str, optional): The new emotion for the mouth (e.g., "happy").
+            squint_amount (float, optional): The intensity of the squint (0 to PI/2).
+            reset_squint (bool, optional): If True, removes any existing squint.
+            bend_direction (np.ndarray, optional): Vector direction for bending the sclera.
+            bend_intensity (float, optional): Intensity of the sclera bend.
+            reset_sclera (bool, optional): If True, removes any sclera bend.
+            **kwargs: Additional arguments for the AnimationGroup (e.g., run_time).
+
+        Returns:
+            AnimationGroup: A single, non-conflicting animation performing all actions.
+        """
         if new_state_name not in self.templates:
             raise ValueError(f"Cannot change to '{new_state_name}'; not a valid state.")
+
+        anims = []
+
+        # --- 1. Core State Change (Body, Eyes, Mouth position) ---
         target_body = self._create_body_at_anchor(new_state_name, self.anchor_pos)
-        body_transform = Transform(self.body, target_body)
+        anims.append(Transform(self.body, target_body))
+
         eyes_new_pos = self.anchor_pos + self.eyes_offsets[new_state_name]
-        eyes_move = self.eyes.animate.move_to(eyes_new_pos)
+        anims.append(self.eyes.animate.move_to(eyes_new_pos))
+
         mouth_new_pos = self.anchor_pos + self.mouth_offsets[new_state_name]
-        mouth_move = self.mouth.animate.move_to(mouth_new_pos)
+        anims.append(self.mouth.animate.move_to(mouth_new_pos))
         
+        # Update internal state immediately so other animations are built correctly
         self.current_state_name = new_state_name
         self.body.target = target_body
-        return AnimationGroup(body_transform, eyes_move, mouth_move)
+
+        # --- 2. Mouth Expression Change ---
+        if change_mouth_to:
+            anims.append(self.change_mouth(change_mouth_to))
+        
+        # --- 3. Eye Gaze (Look At / Look Straight) ---
+        if look_straight:
+            anims.append(self.look_straight())
+        elif look_at_target is not None:
+            anims.append(self.look_at(look_at_target))
+
+        # --- 4. Eye Shape (Squint) ---
+        if reset_squint:
+            anims.append(self.reset_squint())
+        elif squint_amount is not None:
+            anims.append(self.squint(squint_amount))
+            
+        # --- 5. Eye Shape (Sclera Bend) ---
+        if reset_sclera:
+            anims.append(self.reset_sclera())
+        elif bend_direction is not None and np.linalg.norm(bend_direction) > 0:
+            anims.append(self.bend_sclera(bend_direction, intensity=bend_intensity))
+
+        return AnimationGroup(*anims, **kwargs)
 
     def move_anchor_to(self, new_anchor_pos: np.ndarray) -> AnimationGroup:
         current_anchor_vector = self.anchor_vectors[self.current_state_name]
