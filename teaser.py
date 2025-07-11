@@ -144,19 +144,19 @@ class TheStormTeaser(Scene):
         # self.play(FadeIn(psi))
         self.play(psi.move_anchor_to(solution.get_left() + 2*LEFT))
 
-        self.play(FadeIn(solution, scale=0.8))
-        self.play(psi.change_state("pondering", change_mouth_to="happy_smirk", look_at_target=solution, bend_direction=RIGHT+UP, bend_intensity=0.1))
-        self.wait(1)
 
         # ====================================================================
         #  BEAT 6: The Hook (22-30s)
         #  The creature addresses the viewer. The mysterious title appears.
         # ====================================================================
+        self.play(FadeIn(solution, scale=0.8))
+        self.play(psi.change_state("pondering", change_mouth_to="happy_smirk", look_at_target=solution, bend_direction=RIGHT+UP, bend_intensity=0.1))
         title = Text("This Weird Approximation Solves an Impossible Problem.", font_size=32, weight=BOLD).to_edge(UP)
+        self.play(Write(title))
+        self.wait(2)
 
         self.play(FadeOut(solution))
 
-        self.play(Write(title))
         self.play(
             psi.change_state(new_state_name="hand_up",
                              look_at_target=title,
@@ -168,4 +168,4 @@ class TheStormTeaser(Scene):
                   title.animate.move_to(ORIGIN))
         subtitle = Text("Coming Soon!", font_size=28, color=GRAY_A).next_to(title, 2*DOWN)
         self.play(FadeIn(subtitle, shift=UP))
-        self.wait(0.5)
+        self.wait(2.5)
