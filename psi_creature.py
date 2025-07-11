@@ -286,7 +286,7 @@ class PsiCreature(VGroup):
             target_y_eyes = template.get_top()[1] - (self.eyes.get_height() * 0.9)
             eyes_center_in_template = np.array([stable_x, target_y_eyes, 0])
             self.eyes_offsets[state] = eyes_center_in_template - self.anchor_vectors[state]
-            target_y_mouth = self.anchor_vectors[state][1] + (self.body_scale * 0.15)
+            target_y_mouth = self.anchor_vectors[state][1] + (self.body_scale * 0.2)
             mouth_center_in_template = np.array([stable_x, target_y_mouth, 0])
             self.mouth_offsets[state] = mouth_center_in_template - self.anchor_vectors[state]
 
@@ -308,18 +308,92 @@ class PsiCreature(VGroup):
         return mobj
 
     def change_state(self, new_state_name: str) -> AnimationGroup:
+        """
+        A simple state change. For more complex, simultaneous animations,
+        use change_state_and_animate.
+        """
+        return self.change_state_and_animate(new_state_name)
+
+    def change_state_and_animate(
+        self,
+        new_state_name: str,
+        look_at_target: Mobject | np.ndarray = None,
+        squint_theta: float = None,
+        reset_squint_flag: bool = False,
+        **kwargs
+    ) -> AnimationGroup:
+        """
+        Creates a composite animation for changing state while simultaneously
+        performing other actions like looking or squinting. This method resolves
+        animation conflicts by calculating all targets based on the final state.
+
+        Args:
+            new_state_name (str): The target state for the body.
+            look_at_target (Mobject | np.ndarray, optional): The target to look at.
+            squint_theta (float, optional): The angle for the squint.
+            reset_squint_flag (bool, optional): If True, resets any existing squint.
+
+        Returns:
+            AnimationGroup: A single animation group to be passed to `self.play()`.
+        """
         if new_state_name not in self.templates:
             raise ValueError(f"Cannot change to '{new_state_name}'; not a valid state.")
+
+        # 1. Get base animations for body and mouth moving to new state
         target_body = self._create_body_at_anchor(new_state_name, self.anchor_pos)
         body_transform = Transform(self.body, target_body)
-        eyes_new_pos = self.anchor_pos + self.eyes_offsets[new_state_name]
-        eyes_move = self.eyes.animate.move_to(eyes_new_pos)
+
         mouth_new_pos = self.anchor_pos + self.mouth_offsets[new_state_name]
         mouth_move = self.mouth.animate.move_to(mouth_new_pos)
+
+        # This will hold all animations to be played together
+        all_anims = [body_transform, mouth_move]
+
+        # 2. Handle the eyes, which are the source of the conflict.
+        # We need to create a single Transform for the entire eye group
+        # that incorporates movement, squinting, and looking.
+
+        # Create a deep copy of the eyes to modify into the final target
+        target_eyes = self.eyes.copy()
+
+        # Move the entire target eye group to its final position
+        eyes_new_pos = self.anchor_pos + self.eyes_offsets[new_state_name]
+        target_eyes.move_to(eyes_new_pos)
+
+        # Apply squint/reset to the *target* eyes
+        if reset_squint_flag:
+            # Get the reset animation and apply its target to our target_eyes
+            reset_anim = target_eyes.reset_squint()
+            target_eyes.left_eye.sclera.become(reset_anim.animations[0].target_mobject)
+            target_eyes.right_eye.sclera.become(reset_anim.animations[1].target_mobject)
+        elif squint_theta is not None:
+            # Get the squint animation and apply its target
+            squint_anim = target_eyes.squint(squint_theta)
+            target_eyes.left_eye.sclera.become(squint_anim.animations[0].target_mobject)
+            target_eyes.right_eye.sclera.become(squint_anim.animations[1].target_mobject)
+
+        # Apply look_at to the *target* eyes (which are now in their final position)
+        if look_at_target is not None:
+            target_point = look_at_target.get_center() if isinstance(look_at_target, Mobject) else look_at_target
+            
+            # Manually move the pupils of the target_eyes, NOT animating
+            for i, eye in enumerate([target_eyes.left_eye, target_eyes.right_eye]):
+                direction = target_point - eye.sclera.get_center()
+                if np.linalg.norm(direction) > 0:
+                    unit_direction = normalize(direction)
+                    max_offset = (eye.sclera.height / 2) - eye.iris.radius
+                    pupil_new_pos = eye.sclera.get_center() + unit_direction * max_offset
+                    eye.iris_pupil_group.move_to(pupil_new_pos)
+
+        # Now, create the single Transform from current eyes to the fully configured target_eyes
+        eyes_transform = Transform(self.eyes, target_eyes)
+        all_anims.append(eyes_transform)
         
+        # 3. Update the creature's state variables for future animations
         self.current_state_name = new_state_name
-        self.body.target = target_body
-        return AnimationGroup(body_transform, eyes_move, mouth_move)
+        self.body.target = target_body # For Manim's internal tracking
+
+        return AnimationGroup(*all_anims, **kwargs)
 
     def move_anchor_to(self, new_anchor_pos: np.ndarray) -> AnimationGroup:
         current_anchor_vector = self.anchor_vectors[self.current_state_name]
