@@ -25,17 +25,6 @@ class PsiCreatureShowcase(Scene):
             }
         }
 
-        # --- PART 1: INTRODUCTION & CORE MECHANICS ---
-        
-        # Title Card
-        title = Text("PsiCreature", font_size=72).scale(0.8)
-        subtitle = Text("Feature Showcase", font_size=36).next_to(title, DOWN, buff=0.2)
-        intro_text = VGroup(title, subtitle).center()
-
-        self.play(Write(intro_text))
-        self.wait(2)
-        self.play(FadeOut(intro_text))
-        self.wait(0.5)
 
         # Introduce the creature
         psi = PsiCreature(
@@ -50,10 +39,26 @@ class PsiCreatureShowcase(Scene):
         def create_label(text):
             return Text(text, font_size=32).to_edge(UP)
 
-        self.play(FadeIn(psi), FadeIn(anchor_dot), FadeIn(anchor_label))
+        psi_text = Text("PsiCreature", font_size=48).move_to(ORIGIN+RIGHT)
+        self.play(FadeIn(psi), run_time=1)
+        self.wait(1)
+        self.play(Write(psi_text, run_time=1))
+        self.wait(2)
+        self.play(psi.look_at(psi_text))
+        self.wait(3)
+        self.play(psi.look_straight())
+        self.wait(1)
         self.play(psi.blink())
+        self.wait(1)
+        self.play(FadeOut(psi_text))
+        self.wait(16)
+        c_text = Text("Fully controlled with code!", font_size=42).next_to(psi.get_right(), RIGHT)
+        self.play(Write(c_text, run_time=1))
+        self.wait(3)
+        self.play(FadeOut(c_text))
+        self.wait(1)
+        self.play(FadeIn(anchor_dot), FadeIn(anchor_label))
         self.wait(1.5)
-        
         # Demonstrate anchor-based movement
         label_move = create_label("Anchor-Based Movement: .move_anchor_to()")
         self.play(FadeIn(label_move, shift=DOWN), FadeOut(anchor_label))
@@ -72,7 +77,7 @@ self.play(
             run_time=3
         )
         self.wait(1)
-
+        return
         # Demonstrate Gaze control
         self.play(FadeOut(code_move), FadeOut(label_move, shift=UP), FadeOut(anchor_dot))
         label_gaze = create_label("Gaze Control: .look_at()")
