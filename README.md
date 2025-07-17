@@ -12,6 +12,11 @@ This repository contains Manim code for creating animated "Psi Creature".
 
 Here are the latest test videos, automatically converted to GIFs.
 
+<div align="center">
+<video src="./media/videos/tests/1080p60/MultiPartTest.mp4" width="320"></video>
+</div>
+
+
 <!-- START_GIFS -->
 ### MultiPartTest
 [![Preview of MultiPartTest](media/videos/tests/1080p60/gifs/MultiPartTest.gif)](./media/videos/tests/1080p60/MultiPartTest.mp4)
