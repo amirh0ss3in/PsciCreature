@@ -304,4 +304,30 @@ psi.change_state("default",
         self.wait(30)
         self.play(FadeOut(fu), FadeOut(psi))
         self.wait(1)
-        
+
+class PsiThumbnailScene(Scene):
+    """
+    Creates a visually intense thumbnail-style scene for:
+    'Is It Still Just Code If It Makes Eye Contact?'
+    """
+    def construct(self):
+        self.camera.background_color = "#111111"
+
+        # Big PsiCreature in center with glowing eyes
+        # Add title-style text (optional)
+        eerie_text = Text("It Looked at Me...", font_size=70, color=WHITE).to_edge(UP).shift(DOWN*0.4)
+        self.add(eerie_text)
+
+        psi = PsiCreature(
+            body_scale=10,
+            initial_state="pondering",
+            initial_emotion="unsure",
+            mouth_emotion_intensity=0.12,
+            eye_color=PURPLE_D,
+            initial_anchor_pos=eerie_text.get_bottom()+6*DOWN
+        )
+        self.add(psi)
+        self.play(psi.look_at(RIGHT*10))
+        self.play(psi.squint(PI/(6.5)))
+
+        self.wait(5)
